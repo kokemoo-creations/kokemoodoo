@@ -5,7 +5,6 @@
     'summary': 'Integrate FlagShip shipping API with Odoo',
     'depends': ['delivery'],
     'data': [
-        'security/ir.model.access.csv',
         'views/delivery_flagship_views.xml',
     ],
     'installable': True,

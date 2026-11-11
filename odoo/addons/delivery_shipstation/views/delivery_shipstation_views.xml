@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_delivery_carrier_form_inherit_shipstation" model="ir.ui.view">
+        <field name="name">delivery.carrier.form.inherit.shipstation</field>
+        <field name="model">delivery.carrier</field>
+        <field name="inherit_id" ref="delivery.view_delivery_carrier_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="ShipStation Configuration"
+                      name="shipstation_configuration"
+                      invisible="delivery_type != 'shipstation'">
+                    <group>
+                        <group string="API Credentials">
+                            <field name="shipstation_api_key"
+                                   required="delivery_type == 'shipstation'"
+                                   password="True"/>
+                            <field name="has_shipstation_credentials" readonly="1"/>
+                        </group>
+                        <group string="Service Filtering">
+                            <field name="shipstation_carrier_ids"
+                                   required="delivery_type == 'shipstation'"
+                                   placeholder="se-123890,se-123891"/>
+                            <field name="shipstation_carrier_filter"
+                                   placeholder="e.g. fedex, ups, usps"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Optional: show the stored shipment ID on the picking form -->
+    <record id="view_picking_form_inherit_shipstation" model="ir.ui.view">
+        <field name="name">stock.picking.form.inherit.shipstation</field>
+        <field name="model">stock.picking</field>
+        <field name="inherit_id" ref="stock.view_picking_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='carrier_tracking_ref']" position="after">
+                <field name="shipstation_shipment_id" readonly="1"
+                       invisible="not shipstation_shipment_id"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

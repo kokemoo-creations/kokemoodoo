@@ -7,6 +7,11 @@ from odoo.exceptions import UserError
 class DeliveryFlagship(models.Model):
     _inherit = 'delivery.carrier'
 
+    delivery_type = fields.Selection(
+        selection_add=[('flagship', 'FlagShip')],
+        ondelete={'flagship': 'set default'}
+    )
+
     # FlagShip-specific credentials
     flagship_api_key = fields.Char(
         string='FlagShip API Key',
@@ -16,6 +21,13 @@ class DeliveryFlagship(models.Model):
         string='FlagShip Account ID',
         help='Your FlagShip account ID'
     )
+    
+    flagship_allowed_courier = fields.Selection([
+        ('Purolator', 'Purolator'),
+        ('FedEx', 'FedEx'),
+        ('UPS', 'UPS'),
+        ('DHL', 'DHL')
+    ], string='Courier Filter', help="If set, only rates from this specific courier will be returned by this shipping method.")
 
     # FlagShip integration status
     has_flagship_credentials = fields.Boolean(
@@ -49,56 +61,81 @@ class DeliveryFlagship(models.Model):
             }
 
         try:
-            # Calculate total weight and dimensions for the order
-            total_weight = sum(
-                line.product_id.weight * line.product_qty
-                for line in order.order_line
-            )
+            # Build the packages list dynamically from the order lines
+            api_packages = []
+            for line in order.order_line:
+                if line.product_id.type != 'service':
+                    product = line.product_id
+                    
+                    p_length = getattr(product, 'length', 30) or 30
+                    p_width = getattr(product, 'width', 30) or 30
+                    p_height = getattr(product, 'height', 30) or 30
+                    p_weight = product.weight or 1.0
+                    
+                    for _ in range(int(line.product_qty)):
+                        api_packages.append({
+                            'length': p_length,
+                            'width': p_width,
+                            'height': p_height,
+                            'weight': p_weight,
+                            'description': product.name or 'Goods',
+                        })
+            
+            if not api_packages:
+                api_packages = [{
+                    'length': 30, 'width': 30, 'height': 30, 
+                    'weight': 1.0, 'description': 'Goods'
+                }]
 
-            # Get warehouse (shipping) address
-            warehouse = self.env['stock.warehouse'].search(
-                [('code', '=', order.company_id.default_warehouse.code)],
-                limit=1
-            )
+            warehouse = order.warehouse_id
+            origin = warehouse.partner_id
 
-            # Prepare API request payload
-            # Adjust this based on FlagShip's actual API documentation
             payload = {
-                'apiKey': self.flagship_api_key,
-                'account': self.flagship_account_id,
                 'from': {
-                    'city': warehouse.city,
-                    'state': warehouse.state_id.code if warehouse.state_id else '',
-                    'zip': warehouse.zip,
-                    'country': warehouse.country_id.code if warehouse.country_id else '',
+                    'name': origin.name or order.company_id.name or 'Company',
+                    'attn': 'Shipping Dept',
+                    'address': origin.street or '123 Warehouse St',
+                    'city': origin.city or 'Toronto',
+                    'state': origin.state_id.code if origin.state_id else 'ON',
+                    'postal_code': origin.zip or 'M1M1M1',
+                    'country': origin.country_id.code if origin.country_id else 'CA',
+                    'phone': origin.phone or '1234567890',
+                    'is_commercial': True
                 },
                 'to': {
-                    'city': order.partner_shipping_id.city,
-                    'state': order.partner_shipping_id.state_id.code
-                        if order.partner_shipping_id.state_id else '',
-                    'zip': order.partner_shipping_id.zip,
-                    'country': order.partner_shipping_id.country_id.code
-                        if order.partner_shipping_id.country_id else '',
+                    'name': order.partner_shipping_id.name or 'Customer',
+                    'attn': order.partner_shipping_id.name or 'Customer',
+                    'address': order.partner_shipping_id.street or '123 Customer St',
+                    'city': order.partner_shipping_id.city or 'Toronto',
+                    'state': order.partner_shipping_id.state_id.code if order.partner_shipping_id.state_id else 'ON',
+                    'postal_code': order.partner_shipping_id.zip or 'A1B2C3',
+                    'country': order.partner_shipping_id.country_id.code if order.partner_shipping_id.country_id else 'CA',
+                    'phone': order.partner_shipping_id.phone or '1234567890',
+                    'is_commercial': False
                 },
-                'packages': [
-                    {
-                        'length': order.partner_shipping_id.product_length or 30,  # default cm
-                        'width': order.partner_shipping_id.product_width or 30,   # default cm
-                        'height': order.partner_shipping_id.product_height or 30, # default cm
-                        'weight': total_weight,
-                        'service': 'standard',  # or 'express', 'overnight', etc.
-                    }
-                ]
+                'packages': {
+                    'type': 'package',
+                    'units': 'metric', 
+                    'content': 'goods',
+                    'items': api_packages
+                },
+                'payment': {
+                    'payer': 'F'
+                }
             }
 
-            # Make API call
+            headers = {
+                'X-Smartship-Token': self.flagship_api_key,
+                'Content-Type': 'application/json'
+            }
             response = requests.post(
-                'https://api.shippingapi.com/v1/rates',  # Replace with FlagShip endpoint
+                'https://api.smartship.io/ship/rates', 
                 json=payload,
-                headers={'Content-Type': 'application/json'}
+                headers=headers
             )
 
-            if response.status_code != 200:
+            # SmartShip returns 200 for full success, 206 for partial success (some couriers failed)
+            if response.status_code not in (200, 206):
                 return {
                     'success': False,
                     'price': 0.0,
@@ -106,18 +143,28 @@ class DeliveryFlagship(models.Model):
                     'warning_message': ''
                 }
 
-            # Parse response and calculate price
-            rates_data = response.json()
+            response_json = response.json()
+            rates_list = response_json.get('content', [])
+            
+            # Filter the rates by the selected courier if a filter is configured on this carrier
+            if self.flagship_allowed_courier:
+                rates_list = [
+                    r for r in rates_list 
+                    if r.get('service', {}).get('courier_name', '') == self.flagship_allowed_courier
+                ]
+            
+            if not rates_list:
+                return {
+                    'success': False,
+                    'price': 0.0,
+                    'error_message': _('No applicable rates returned for this provider/destination.'),
+                    'warning_message': ''
+                }
 
-            # Choose the best rate (lowest price for standard service)
-            best_rate = min(
-                rates_data.get('rates', []),
-                key=lambda r: r.get('price', float('inf'))
-            )
+            best_rate = min(rates_list, key=lambda r: float(r.get('price', {}).get('total', float('inf'))))
 
-            price = float(best_rate.get('price', 0.0))
+            price = float(best_rate.get('price', {}).get('total', 0.0))
 
-            # Apply margin (same as Odoo's built-in logic)
             margin = self.margin or 0.0
             final_price = price * (1 + margin / 100)
 
@@ -125,18 +172,19 @@ class DeliveryFlagship(models.Model):
                 'success': True,
                 'price': final_price,
                 'error_message': '',
-                'warning_message': f'FlagShip rate retrieved for {len(rates_data.get("rates", []))} service options'
+                'warning_message': f'FlagShip rate retrieved for {len(rates_list)} service options'
             }
 
         except Exception as e:
             return {
                 'success': False,
                 'price': 0.0,
-                'error_message': f'Error calling FlagShip API: {str(e)}',
+                'error_message': f'Not available',
+                # 'error_message': f'Error calling FlagShip API: {str(e)}',
                 'warning_message': ''
             }
 
-    def flagship_send_shipping(self, move_ids):
+    def flagship_send_shipping(self, pickings):
         """
         Create shipment/label in FlagShip and return tracking number
         """
@@ -146,54 +194,81 @@ class DeliveryFlagship(models.Model):
             raise UserError(_('FlagShip API credentials not configured'))
 
         try:
-            # Get the delivery order associated with this carrier
-            delivery_order = self.env['delivery.order'].search(
-                [('carrier_id', '=', self.id)],
-                order_by='id desc',
-                limit=1
-            )
-
-            if not delivery_order:
-                raise UserError(_('No delivery order found for this carrier'))
-
-            # Prepare shipment API call
-            payload = {
-                'apiKey': self.flagship_api_key,
-                'account': self.flagship_account_id,
-                'shipment': {
+            tracking_number = False
+            for picking in pickings:
+                origin = picking.picking_type_id.warehouse_id.partner_id
+                dest = picking.partner_id
+                
+                payload = {
                     'from': {
-                        'city': delivery_order.warehouse.city,
-                        'zip': delivery_order.warehouse.zip,
-                        'country': delivery_order.warehouse.country_id.code,
+                        'name': origin.name or picking.company_id.name or 'Company',
+                        'attn': 'Shipping Dept',
+                        'address': origin.street or '123 Warehouse St',
+                        'city': origin.city or 'Toronto',
+                        'state': origin.state_id.code if origin.state_id else 'ON',
+                        'postal_code': origin.zip or 'M1M1M1',
+                        'country': origin.country_id.code if origin.country_id else 'CA',
+                        'phone': origin.phone or '1234567890',
+                        'is_commercial': True
                     },
                     'to': {
-                        'city': delivery_order.partner.city,
-                        'zip': delivery_order.partner.zip,
-                        'country': delivery_order.partner.country_id.code,
+                        'name': dest.name or 'Customer',
+                        'attn': dest.name or 'Customer',
+                        'address': dest.street or '123 Customer St',
+                        'city': dest.city or 'Toronto',
+                        'state': dest.state_id.code if dest.state_id else 'ON',
+                        'postal_code': dest.zip or 'A1B2C3',
+                        'country': dest.country_id.code if dest.country_id else 'CA',
+                        'phone': dest.phone or '1234567890',
+                        'is_commercial': False
                     },
-                    'weight': delivery_order.weight,
-                    'service': 'standard',
+                    'packages': {
+                        'type': 'package',
+                        'units': 'metric',
+                        'content': 'goods',
+                        'items': [
+                            {
+                                'length': 30,
+                                'width': 30,
+                                'height': 30,
+                                'weight': picking.shipping_weight or 1.0,
+                                'description': 'Goods'
+                            }
+                        ]
+                    },
+                    'payment': {
+                        'payer': 'F'
+                    },
+                    'service': {
+                        # Map this dynamically in the future based on the exact rate chosen
+                        'courier_name': self.flagship_allowed_courier.lower() if self.flagship_allowed_courier else 'fedex',
+                        'courier_code': 'STANDARD_OVERNIGHT' 
+                    }
                 }
-            }
 
-            # Call FlagShip to create shipment
-            response = requests.post(
-                'https://api.shippingapi.com/v1/create-shipment',
-                json=payload
-            )
+                headers = {
+                    'X-Smartship-Token': self.flagship_api_key,
+                    'Content-Type': 'application/json'
+                }
 
-            if response.status_code != 200:
-                raise UserError(f'FlagShip shipment creation failed: {response.text}')
+                response = requests.post(
+                    'https://api.smartship.io/ship/confirm',
+                    json=payload,
+                    headers = headers
+                )
 
-            # Extract tracking number from response
-            shipment_data = response.json()
-            tracking_number = shipment_data.get('tracking_number') or shipment_data.get('tracking_id')
+                if response.status_code != 200:
+                    raise UserError(f'FlagShip shipment creation failed: {response.text}')
 
-            # Update the delivery order with tracking info
-            delivery_order.update({
-                'tracking_reference': tracking_number,
-                'carrier_tracking_url': self.tracking_url.replace('<shipmenttrackingnumber>', tracking_number)
-            })
+                shipment_data = response.json()
+                content = shipment_data.get('content', {})
+                tracking_number = content.get('tracking_number')
+
+                tracking_url = self.tracking_url.replace('<shipmenttrackingnumber>', str(tracking_number)) if self.tracking_url and tracking_number else False
+                picking.update({
+                    'tracking_reference': tracking_number,
+                    'carrier_tracking_url': tracking_url
+                })
 
             return {
                 'success': True,
@@ -210,7 +285,7 @@ class DeliveryFlagship(models.Model):
             return False
         return self.tracking_url.replace('<shipmenttrackingnumber>', shipment.tracking_reference)
 
-    def flagship_cancel_shipment(self, shipment_id):
+    def flagship_cancel_shipment(self, picking):
         """Cancel a shipment in FlagShip"""
         self.ensure_one()
 
@@ -218,9 +293,16 @@ class DeliveryFlagship(models.Model):
             raise UserError(_('FlagShip API credentials not configured'))
 
         try:
+            shipment_id = picking.tracking_reference
+            if not shipment_id:
+                raise UserError(_('No tracking reference found to cancel.'))
+                
+            headers = {
+                'X-Smartship-Token': self.flagship_api_key
+            }
             response = requests.post(
-                f'https://api.shippingapi.com/v1/cancel-shipment/{shipment_id}',
-                json={'apiKey': self.flagship_api_key}
+                f'https://api.smartship.io/ship/cancel/{shipment_id}',
+                headers=headers
             )
 
             if response.status_code != 200:

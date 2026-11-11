@@ -7,7 +7,6 @@
     'author': 'Your Name',
     'depends': ['delivery'],
     'data': [
-        'security/ir.model.access.csv',
         'views/delivery_flagship_views.xml',
     ],
     'installable': True,

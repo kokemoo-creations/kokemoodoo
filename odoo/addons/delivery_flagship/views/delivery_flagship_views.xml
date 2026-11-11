@@ -1,4 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- No view inheritance needed - model inheritance handles the fields -->
+    <record id="view_delivery_carrier_form_inherit_flagship" model="ir.ui.view">
+        <field name="name">delivery.carrier.form.inherit.flagship</field>
+        <field name="model">delivery.carrier</field>
+        <!-- Inherit the base delivery carrier form -->
+        <field name="inherit_id" ref="delivery.view_delivery_carrier_form"/>
+        <field name="arch" type="xml">
+            <!-- Add a new page inside the notebook for FlagShip settings -->
+            <xpath expr="//notebook" position="inside">
+                <page string="FlagShip Configuration" name="flagship_configuration" invisible="delivery_type != 'flagship'">
+                    <group>
+                        <group string="API Credentials">
+                            <field name="flagship_api_key" required="delivery_type == 'flagship'"/>
+                            <field name="flagship_account_id" required="delivery_type == 'flagship'"/>
+                            <field name="has_flagship_credentials" readonly="1"/>
+                        </group>
+                        <group string="Service Filtering">
+                            <!-- This is the new field correctly placed inside the view -->
+                            <field name="flagship_allowed_courier"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
 </odoo>
