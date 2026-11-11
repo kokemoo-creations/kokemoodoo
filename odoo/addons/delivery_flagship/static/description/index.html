@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <title>FlagShip Carrier Integration</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:400,700"/>
+    <style>
+        html,body{background:#282b33;color:#9f9f9f;font-family:"Roboto","Helvetica","Arial",sans-serif;margin:0;display:flex;flex-direction:column;height:100vh;}
+        ol,ul,li{font-size:14px;line-height:24px;}
+        ol>li{margin-bottom:10px;}
+        ul li{list-style-type:disc;}
+        a{color:#64b5f6;text-decoration:none;}
+        a:hover{text-decoration:underline;}
+        header{background:#191b23;padding:10px 20px;font-size:24px;color:#fff;}
+        main{padding:20px;max-width:800px;margin:0 auto;flex:1;}
+        h1{color:#fff;margin-bottom:20px;}
+        h2{color:#fff;margin-top:30px;margin-bottom:15px;}
+        code{background:#191b23;color:#ffeb3b;padding:2px 6px;border-radius:3px;font-family:monospace;}
+        .note{background:#1976d220;padding:10px;border-left:4px solid #1976d2;margin:15px 0;border-radius:0 4px 4px 0;}
+    </style>
+</head>
+<body>
+<header>
+    <strong>FlagShip Carrier Integration</strong>
+</header>
+<main>
+    <h1>FlagShip Shipping Integration</h1>
+    <p>This module provides integration with FlagShip shipping API for Odoo Community Edition.</p>
+
+    <h2>Features</h2>
+    <ul>
+        <li>Real-time shipping rate calculation</li>
+        <li>Shipping label generation</li>
+        <li>Tracking number integration</li>
+    </ul>
+
+    <h2>Configuration</h2>
+    <ol>
+        <li>Go to <strong>Inventory &gt; Configuration &gt; Delivery Methods</strong></li>
+        <li>Create or edit a delivery method</li>
+        <li>Set Provider to <code>FlagShip</code></li>
+        <li>Enter your API credentials in the new fields</li>
+        <li>Test in Test Environment before Production</li>
+    </ol>
+
+    <div class="note">
+        <strong>Note:</strong> Replace the example API endpoint (<code>https://api.shippingapi.com/v1/rates</code>) 
+        with FlagShip's actual API endpoint in the code.
+    </div>
+</main>
+</body>
+</html>

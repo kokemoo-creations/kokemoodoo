@@ -1,6 +1,6 @@
 {
     'name': 'FlagShip Carrier Integration',
-    'version': '19.0.1.0.0',
+    'version': '20.0.1.0.0',
     'category': 'Inventory',
     'summary': 'Integrate FlagShip shipping API with Odoo',
     'depends': ['delivery'],

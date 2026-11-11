@@ -1,14 +1,22 @@
 import requests
+
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
+
 
 class DeliveryFlagship(models.Model):
     _inherit = 'delivery.carrier'
 
     # FlagShip-specific credentials
-    flagship_api_key = fields.Char(string='FlagShip API Key', help='Your FlagShip API key')
-    flagship_account_id = fields.Char(string='FlagShip Account ID', help='Your FlagShip account ID')
-    
+    flagship_api_key = fields.Char(
+        string='FlagShip API Key',
+        help='Your FlagShip API key'
+    )
+    flagship_account_id = fields.Char(
+        string='FlagShip Account ID',
+        help='Your FlagShip account ID'
+    )
+
     # FlagShip integration status
     has_flagship_credentials = fields.Boolean(
         compute='_compute_has_flagship_credentials',
@@ -26,12 +34,12 @@ class DeliveryFlagship(models.Model):
     def flagship_rate_shipment(self, order):
         """
         Calculate shipping rate from FlagShip API
-        
+
         Returns dict with structure expected by Odoo:
         {'success': bool, 'price': float, 'error_message': str, 'warning_message': str}
         """
         self.ensure_one()
-        
+
         if not self.has_flagship_credentials:
             return {
                 'success': False,
@@ -46,13 +54,13 @@ class DeliveryFlagship(models.Model):
                 line.product_id.weight * line.product_qty
                 for line in order.order_line
             )
-            
+
             # Get warehouse (shipping) address
             warehouse = self.env['stock.warehouse'].search(
                 [('code', '=', order.company_id.default_warehouse.code)],
                 limit=1
             )
-            
+
             # Prepare API request payload
             # Adjust this based on FlagShip's actual API documentation
             payload = {
@@ -66,10 +74,10 @@ class DeliveryFlagship(models.Model):
                 },
                 'to': {
                     'city': order.partner_shipping_id.city,
-                    'state': order.partner_shipping_id.state_id.code 
+                    'state': order.partner_shipping_id.state_id.code
                         if order.partner_shipping_id.state_id else '',
                     'zip': order.partner_shipping_id.zip,
-                    'country': order.partner_shipping_id.country_id.code 
+                    'country': order.partner_shipping_id.country_id.code
                         if order.partner_shipping_id.country_id else '',
                 },
                 'packages': [
@@ -100,15 +108,15 @@ class DeliveryFlagship(models.Model):
 
             # Parse response and calculate price
             rates_data = response.json()
-            
+
             # Choose the best rate (lowest price for standard service)
             best_rate = min(
                 rates_data.get('rates', []),
                 key=lambda r: r.get('price', float('inf'))
             )
-            
+
             price = float(best_rate.get('price', 0.0))
-            
+
             # Apply margin (same as Odoo's built-in logic)
             margin = self.margin or 0.0
             final_price = price * (1 + margin / 100)
@@ -133,7 +141,7 @@ class DeliveryFlagship(models.Model):
         Create shipment/label in FlagShip and return tracking number
         """
         self.ensure_one()
-        
+
         if not self.has_flagship_credentials:
             raise UserError(_('FlagShip API credentials not configured'))
 
@@ -144,7 +152,7 @@ class DeliveryFlagship(models.Model):
                 order_by='id desc',
                 limit=1
             )
-            
+
             if not delivery_order:
                 raise UserError(_('No delivery order found for this carrier'))
 
@@ -180,7 +188,7 @@ class DeliveryFlagship(models.Model):
             # Extract tracking number from response
             shipment_data = response.json()
             tracking_number = shipment_data.get('tracking_number') or shipment_data.get('tracking_id')
-            
+
             # Update the delivery order with tracking info
             delivery_order.update({
                 'tracking_reference': tracking_number,
@@ -205,7 +213,7 @@ class DeliveryFlagship(models.Model):
     def flagship_cancel_shipment(self, shipment_id):
         """Cancel a shipment in FlagShip"""
         self.ensure_one()
-        
+
         if not self.has_flagship_credentials:
             raise UserError(_('FlagShip API credentials not configured'))
 
