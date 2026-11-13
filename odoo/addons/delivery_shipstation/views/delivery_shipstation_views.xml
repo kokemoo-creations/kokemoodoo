@@ -35,9 +35,9 @@
         <field name="model">stock.picking</field>
         <field name="inherit_id" ref="stock.view_picking_form"/>
         <field name="arch" type="xml">
-            <xpath expr="//field[@name='carrier_tracking_ref']" position="after">
+            <xpath expr="//field[@name='carrier_tracking_reference']" position="after">
                 <field name="shipstation_shipment_id" readonly="1"
-                       invisible="not shipstation_shipment_id"/>
+                    invisible="not shipstation_shipment_id"/>
             </xpath>
         </field>
     </record>
